@@ -3,6 +3,7 @@ package de.metas.rest_api.bpartner.impl;
 import static de.metas.rest_api.bpartner.impl.BPartnerRecordsUtil.AD_ORG_ID;
 import static de.metas.rest_api.bpartner.impl.BPartnerRecordsUtil.AD_USER_ID;
 import static de.metas.rest_api.bpartner.impl.BPartnerRecordsUtil.BP_GROUP_RECORD_NAME;
+import static de.metas.rest_api.bpartner.impl.BPartnerRecordsUtil.C_BBPARTNER_LOCATION_ID;
 import static de.metas.rest_api.bpartner.impl.BPartnerRecordsUtil.C_BPARTNER_EXTERNAL_ID;
 import static de.metas.rest_api.bpartner.impl.BPartnerRecordsUtil.C_BPARTNER_ID;
 import static de.metas.rest_api.bpartner.impl.BPartnerRecordsUtil.C_BPARTNER_LOCATION_GLN;
@@ -11,6 +12,7 @@ import static de.metas.rest_api.bpartner.impl.BPartnerRecordsUtil.createBPartner
 import static io.github.jsonSnapshot.SnapshotMatcher.expect;
 import static io.github.jsonSnapshot.SnapshotMatcher.start;
 import static io.github.jsonSnapshot.SnapshotMatcher.validateSnapshots;
+import static org.adempiere.model.InterfaceWrapperHelper.load;
 import static org.adempiere.model.InterfaceWrapperHelper.newInstance;
 import static org.adempiere.model.InterfaceWrapperHelper.refresh;
 import static org.adempiere.model.InterfaceWrapperHelper.saveRecord;
@@ -251,11 +253,11 @@ class BpartnerRestControllerTest
 
 		SystemTime.setTimeSource(() -> 1561134560); // Fri, 21 Jun 2019 16:29:20 GMT
 
-		//JSONObjectMapper.forClass(JsonRequestBPartnerUpsert.class).writeValueAsString(bpartnerUpsertRequest);
+		// JSONObjectMapper.forClass(JsonRequestBPartnerUpsert.class).writeValueAsString(bpartnerUpsertRequest);
 		// invoke the method under test
 		final ResponseEntity<JsonResponseUpsert> result = bpartnerRestController.createOrUpdateBPartner(bpartnerUpsertRequest);
 
-		final MetasfreshId metasfreshId = assertUpsertResultOK(result, "ext-" +externalId);
+		final MetasfreshId metasfreshId = assertUpsertResultOK(result, "ext-" + externalId);
 		BPartnerId bpartnerId = BPartnerId.ofRepoId(metasfreshId.getValue());
 
 		final BPartnerComposite persistedResult = bpartnerCompositeRepository.getById(bpartnerId);
@@ -392,6 +394,27 @@ class BpartnerRestControllerTest
 		assertThatThrownBy(() -> bpartnerRestController.createOrUpdateBPartner(bpartnerUpsertRequest))
 				.isInstanceOf(MissingResourceException.class)
 				.hasMessageContaining("bpartner");
+	}
+
+	/**
+	 * Verifies that if an upsert request contains two locations pointing to the same "real" location, then the are applied one after another.
+	 */
+	@Test
+	void createOrUpdateBPartner_duplicate_location()
+	{
+		final JsonRequestBPartnerUpsert bpartnerUpsertRequest = loadUpsertRequest("BpartnerRestControllerTest_duplicate_location.json");
+
+		createBPartnerData(0);
+
+		// invoke the method under test
+		bpartnerRestController.createOrUpdateBPartner(bpartnerUpsertRequest);
+
+		final I_C_BPartner_Location bpartnerLocationRecord = load(C_BBPARTNER_LOCATION_ID, I_C_BPartner_Location.class);
+		assertThat(bpartnerLocationRecord.isActive()).isFalse(); // from the second JSONLocation
+
+		final I_C_Location locationRecord = bpartnerLocationRecord.getC_Location();
+		assertThat(locationRecord.getAddress1()).isEqualTo("address1_metasfreshId"); // from the first JSONLocation
+		assertThat(locationRecord.getAddress2()).isEqualTo("address2_extId"); // from the second JSONLocation
 	}
 
 	private JsonRequestBPartnerUpsert loadUpsertRequest(final String jsonFileName)
